@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设备调试接口</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .debug-card {
+            transition: transform 0.2s ease;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        .debug-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+        .card-icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+        .interface-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            padding: 20px;
+        }
+        .status-indicator {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        .online { background-color: #28a745; }
+        .offline { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="text-center mb-4">
+            <h1 class="display-4 fw-bold">🔧 设备调试控制台</h1>
+        </div>
+
+        <div class="interface-grid">
+            <!-- RS485 调试 -->
+            <div class="card debug-card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">📡 RS485 通信</h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="card-icon">🔌</div>
+                    <div class="d-grid gap-2">
+                        <a href="/debug_485" class="btn btn-outline-primary">
+                            进入调试
+                            <span class="status-indicator online"></span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CAN 调试 -->
+            <div class="card debug-card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">🚌 CAN 总线</h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="card-icon">🛠️</div>
+                    <div class="d-grid gap-2">
+                        <a href="/debug_can" class="btn btn-outline-success">
+                            总线监控
+                            <span class="status-indicator online"></span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- IO 调试 -->
+            <div class="card debug-card shadow-sm">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">💡 IO 控制</h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="card-icon">🎛️</div>
+                    <div class="d-grid gap-2">
+                        <a href="/debug_io" class="btn btn-outline-warning">
+                            端口管理
+                            <span class="status-indicator offline"></span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <div class="alert alert-info d-inline-flex align-items-center">
+                <span>系统状态：</span>
+                <span class="ms-2">正常运行</span>
+                <div class="status-indicator online ms-2"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -5,6 +5,7 @@ from frmpd.comm.comm_udp import FprotocolUDPServer,FProtocolType
 
 from frmpd.server import socketio
 from flask_socketio import emit
+import socket
 
 
 comm = None
@@ -115,8 +116,9 @@ def main():
     comm.proto.read_485.callback = callback_read_485
     comm.proto.read_can.callback = callback_read_can
     
-    socketio.run(app, host='0.0.0.0', port=8080, debug=False)
+    host_ip = socket.gethostbyname(socket.gethostname())
 
+    socketio.run(app, host='0.0.0.0', port=8080, debug=False, log_output=False)
 
 if __name__=="__main__":
     main()
