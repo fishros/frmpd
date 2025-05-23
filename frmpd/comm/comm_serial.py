@@ -36,7 +36,7 @@ class FprotocolSerial:
         
     def write_callback(self, data):
         self.serial.write(data)
-        print(f"write_callback len=%d -> " % len(data), list(data))
+        # print(f"write_callback len=%d -> " % len(data), list(data))
         
     def can_read_callback(self, type, from_node, error_code):
         self.call_count += 1

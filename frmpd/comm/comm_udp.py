@@ -31,7 +31,7 @@ class FprotocolUDPServer:
         return None
         
     def write_callback(self, data):
-        print(f"write_callback {self.addr} len=%d -> " % len(data), list(data))
+        # print(f"write_callback {self.addr} len=%d -> " % len(data), list(data))
         self.sock.sendto(data, self.addr)
         
     def can_read_callback(self, type, from_node, error_code):
