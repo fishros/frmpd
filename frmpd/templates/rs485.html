@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RS485 Debugger Pro</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+  <style>
+    body, html {
+      height: 100%;
+      margin: 0;
+      padding: 10px;
+      background: #f8f9fa;
+    }
+
+    .main-container {
+      height: calc(100% - 20px);
+      gap: 10px;
+    }
+
+    /* 三栏布局 */
+    .settings-panel {
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      height: 100%;
+      overflow-y: auto;
+    }
+
+    .data-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      gap: 10px;
+    }
+
+    .data-display {
+      flex: 6;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-y: auto;
+    }
+
+    .send-container {
+      flex: 1;
+      min-height: 120px;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+    }
+
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      gap: 10px;
+    }
+
+    .quick-commands {
+      flex: 1;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-y: auto;
+    }
+
+    .log-panel {
+      flex: 1;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-y: auto;
+    }
+
+    /* 消息样式 */
+    .timestamp {
+      color: #6c757d;
+      margin-right: 10px;
+    }
+    .received-msg { color: #28a745; }
+    .sent-msg { color: #007bff; }
+    .system-msg { color: #dc3545; }
+    .hex-data { color: #ff5722; }
+
+    .cmd-btn {
+      margin: 2px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+<div class="container-fluid main-container">
+  <div class="row h-100 g-3">
+    <!-- 左侧设置区 -->
+    <div class="col-3">
+      <div class="settings-panel">
+        <h5>设置</h5>
+        
+        <div class="mb-3">
+          <label class="form-label">波特率</label>
+          <div class="input-group">
+            <input type="number" id="baudrateInput" class="form-control" 
+                   value="9600" min="300" max="115200">
+            <button class="btn btn-outline-primary" onclick="setBaudrate()">应用</button>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">最大显示帧数</label>
+          <input type="number" class="form-control" id="maxFrames" value="1000">
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="autoScroll" checked>
+          <label class="form-check-label">自动滚动</label>
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="showTimestamp" checked>
+          <label class="form-check-label">显示时间戳</label>
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="showSent" checked>
+          <label class="form-check-label">显示发送数据</label>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">显示模式</label>
+          <select class="form-select" id="displayMode">
+            <option value="hex">Hex</option>
+            <option value="text">Text</option>
+          </select>
+        </div>
+
+        <button class="btn btn-danger w-100" onclick="clearData()">清空数据</button>
+      </div>
+    </div>
+
+    <!-- 中间数据区 -->
+    <div class="col-6 data-panel">
+      <div class="data-display" id="dataDisplay">
+        <!-- 数据内容动态插入 -->
+      </div>
+      <div class="send-container">
+        <div class="input-group h-100">
+          <textarea class="form-control h-100" id="messageInput" 
+                   placeholder="输入消息..." oninput="validateHex()"></textarea>
+          <div class="input-group-append ms-2 d-flex flex-column">
+            <select class="form-select mb-2" id="lineEnding">
+              <option value="">无结尾</option>
+              <option value="\r">CR</option>
+              <option value="\n">LF</option>
+              <option value="\r\n">CR+LF</option>
+            </select>
+            <select class="form-select" id="sendMode">
+              <option value="text">文本</option>
+              <option value="hex">Hex</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary mt-2 w-100" onclick="sendMessage()">发送</button>
+      </div>
+    </div>
+
+    <!-- 右侧面板 -->
+    <div class="col-3 right-panel">
+      <div class="quick-commands">
+        <h5>快捷命令</h5>
+        <div class="input-group mb-3">
+          <input type="text" class="form-control" id="cmdName" placeholder="命令名称">
+          <input type="text" class="form-control" id="cmdData" placeholder="Hex数据">
+          <button class="btn btn-success" onclick="addCommand()">+</button>
+        </div>
+        <div id="commandList" class="d-flex flex-wrap"></div>
+      </div>
+      <div class="log-panel">
+        <h5>系统日志</h5>
+        <div id="systemLog"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const socket = io();
+  let settings = {
+    baudrate: 9600,
+    maxFrames: 1000,
+    displayMode: 'hex',
+    showTimestamp: true,
+    showSent: true
+  };
+
+  // Socket事件处理
+  socket.on("connect", () => logSystem('连接到服务器'));
+  socket.on("disconnect", () => logSystem('断开连接'));
+  socket.on("read_485", data => processData(data));
+
+  // 核心功能函数
+  function processData(data) {
+    const display = document.getElementById('dataDisplay');
+    const isHex = settings.displayMode === 'hex';
+    const content = isHex ? formatHexData(data) : decodeText(data);
+    
+    addDataLine(content, 'received');
+    checkMaxFrames();
+  }
+
+  function formatHexData(data) {
+    return data.data.match(/.{2}/g).join(' ').toUpperCase();
+  }
+
+  function decodeText(data) {
+    return new TextDecoder().decode(new Uint8Array(data));
+  }
+
+  function addDataLine(content, type) {
+    const div = document.createElement('div');
+    const timestamp = settings.showTimestamp ? 
+    `<span class="timestamp">[${new Date().toLocaleString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3})}]</span>` : '';
+    div.innerHTML = `[${type === 'received' ? '接收' : '发送'}]${timestamp}<span class="${type}-msg">${content}</span>`;
+    document.getElementById('dataDisplay').appendChild(div);
+    checkAutoScroll();
+  }
+
+  // 系统日志
+  function logSystem(msg) {
+    const div = document.createElement('div');
+    div.className = 'system-msg';
+    div.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    document.getElementById('systemLog').appendChild(div);
+  }
+
+  // 发送功能
+  function sendMessage() {
+    const input = document.getElementById('messageInput');
+    const mode = document.getElementById('sendMode').value;
+    let data = input.value.trim();
+
+    if (mode === 'hex') {
+      // 先去除多余空格,按2位分割
+      data = data.replace(/\s+/g, ' ').trim();
+      const hexPairs = data.split(' ');
+      
+      // 检查每一对是否是有效的hex
+      for (let pair of hexPairs) {
+      if (!/^[0-9a-fA-F]{2}$/.test(pair)) {
+        alert('每组必须是2位有效的十六进制数');
+        return;
+      }
+      }
+      
+      // 合并为无空格的hex字符串
+      data = hexPairs.join('');
+    }
+
+    socket.emit("write_485", { data, mode });
+    settings.showSent = document.getElementById('showSent').checked;
+    if(settings.showSent) {
+      if(mode==='hex') {
+        addDataLine(formatHexData({ data, mode }), 'sent');
+      }else{
+        addDataLine(data.data, 'sent');
+      }
+
+    }
+    logSystem(`发送数据: ${data}`);
+    input.value = '';
+  }
+
+  // 其他功能
+  function setBaudrate() {
+    const input = document.getElementById('baudrateInput');
+    const value = parseInt(input.value);
+    
+    if (value >= 300 && value <= 921600) {
+      settings.baudrate = value;
+      socket.emit("config_rs485_rate", { rate: value });
+      logSystem(`波特率设置为: ${value}`);
+    } else {
+      alert('无效的波特率');
+    }
+  }
+
+  function clearData() {
+    document.getElementById('dataDisplay').innerHTML = '';
+  }
+
+  function checkAutoScroll() {
+    if (document.getElementById('autoScroll').checked) {
+      const panel = document.getElementById('dataDisplay');
+      panel.scrollTop = panel.scrollHeight;
+    }
+  }
+
+  function checkMaxFrames() {
+    const max = parseInt(document.getElementById('maxFrames').value);
+    const display = document.getElementById('dataDisplay');
+    while (display.children.length > max) {
+      display.removeChild(display.firstChild);
+    }
+  }
+
+  // 快捷命令
+  // 快捷命令
+  function addCommand() {
+    const name = document.getElementById('cmdName').value;
+    const data = document.getElementById('cmdData').value;
+    
+    if (!name || !data) {
+      alert('请输入命令名称和数据');
+      return;
+    }
+
+    // 保存到localStorage
+    const commands = JSON.parse(localStorage.getItem('quickCommands') || '[]');
+    commands.push({ name, data });
+    localStorage.setItem('quickCommands', JSON.stringify(commands));
+    console.log('保存命令:', commands);
+    addCommandButton(name, data);
+    document.getElementById('cmdName').value = '';
+    document.getElementById('cmdData').value = '';
+  }
+
+  function addCommandButton(name, data) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-outline-secondary cmd-btn';
+    btn.textContent = name;
+    
+    // 点击发送命令
+    btn.onclick = () => {
+      document.getElementById('messageInput').value = data;
+      document.getElementById('sendMode').value = 'hex';
+      validateHex();
+      sendMessage();
+    };
+
+    // 长按删除功能
+    let pressTimer;
+    btn.addEventListener('mousedown', () => {
+      pressTimer = setTimeout(() => {
+        if(confirm('是否删除此命令?')) {
+          btn.remove();
+          // 从localStorage中删除
+          const commands = JSON.parse(localStorage.getItem('quickCommands') || '[]');
+          const newCommands = commands.filter(cmd => cmd.name !== name);
+          localStorage.setItem('quickCommands', JSON.stringify(newCommands));
+        }
+      }, 1000); // 长按1秒触发
+    });
+
+    btn.addEventListener('mouseup', () => {
+      clearTimeout(pressTimer);
+    });
+
+    btn.addEventListener('mouseleave', () => {
+      clearTimeout(pressTimer);
+    });
+
+    document.getElementById('commandList').appendChild(btn);
+  }
+
+  // 页面加载时恢复保存的命令
+  window.addEventListener('load', () => {
+    console.log('页面加载完成');
+    const commands = JSON.parse(localStorage.getItem('quickCommands') || '[]');
+    commands.forEach(cmd => addCommandButton(cmd.name, cmd.data));
+  });
+
+  // Hex输入校验
+  function validateHex() {
+    const input = document.getElementById('messageInput');
+    if (document.getElementById('sendMode').value === 'hex') {
+      const isValid = /^[0-9a-fA-F\s]*$/.test(input.value);
+      input.style.backgroundColor = isValid ? '' : '#ffe6e6';
+    }
+  }
+</script>
+</body>
+</html>

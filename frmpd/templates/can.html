@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CAN Debugger</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+  <style>
+    body, html { height: 100%; margin: 0; padding: 1rem; }
+    .main-container { display: flex; height: 100%; }
+    .left-panel { width: 240px; margin-right: 1rem; }
+    .right-panel { width: 300px; margin-left: 1rem; }
+    .center-panel { flex-grow: 1; display: flex; flex-direction: column; }
+    .data-display { flex: 6; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 0.5rem; }
+    .send-panel { flex: 1; overflow-y: auto; border: 1px solid #ccc; background: #f9f9f9; padding: 0.5rem; }
+    .log-panel { flex: 1; overflow-y: auto; border: 1px solid #ccc; background: #f1f1f1; padding: 0.5rem; height: 50%; margin-top: 1rem; }
+    table th, table td { font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <div class="main-container">
+    <!-- 左侧设置区 -->
+    <div class="left-panel">
+      <h5>Settings</h5>
+      <div class="mb-3">
+        <label class="form-label">CAN Baudrate</label>
+        <select class="form-select" id="canRate">
+          <option>50</option><option>100</option><option>125</option>
+          <option>250</option><option>500</option><option>1000</option>
+        </select>
+        <button class="btn btn-sm btn-warning mt-2" onclick="setCANRate()">Confirm</button>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Filter CAN ID</label>
+        <input type="number" class="form-control" id="filterCanId" value="0">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Max Frames</label>
+        <select class="form-select" id="maxFrames">
+          <option>50</option><option>100</option><option>200</option><option>500</option>
+        </select>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="autoScroll" checked>
+        <label class="form-check-label">Auto Scroll</label>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="clearDataTable()">Clear Data</button>
+    </div>
+
+    <!-- 中间数据和发送区 -->
+    <div class="center-panel">
+      <div class="data-display mb-2">
+        <h6>CAN Data Frames</h6>
+        <table class="table table-sm table-bordered" id="canTable">
+          <thead>
+            <tr>
+              <th>Time</th><th>Dir</th><th>CAN ID</th><th>Type</th>
+              <th>Len</th><th>Data</th><th>CANOpen</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="send-panel">
+        <h6>Send CAN Frame</h6>
+        <table class="table table-sm" id="sendTable">
+          <thead>
+            <tr><th>CAN ID</th><th>Type</th><th>Data</th><th></th><th></th><th></th><th></th></tr>
+          </thead>
+          <tbody id="sendBody">
+            <tr>
+              <td><input class="form-control form-control-sm" type="text" placeholder="0x123"></td>
+              <td>
+                <select class="form-select form-select-sm">
+                  <option value="std">STD</option>
+                  <option value="ext">EXT</option>
+                </select>
+              </td>
+              <td><input class="form-control form-control-sm" type="text" placeholder="AA BB CC"></td>
+              <td><button class="btn btn-sm btn-success" onclick="sendCANFrame(this)">Send</button></td>
+              <td><input class="form-check-input" type="checkbox"></td>
+              <td><input class="form-control form-control-sm" type="number" placeholder="1000"></td>
+              <td><button class="btn btn-sm btn-primary" onclick="addSendRow()">+</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 右侧快捷命令 + 日志 -->
+    <div class="right-panel d-flex flex-column">
+      <div class="flex-fill">
+        <h6>Quick Commands</h6>
+        <!-- 留空, 用户自定义 -->
+      </div>
+      <div class="log-panel">
+        <h6>Log</h6>
+        <div id="logArea"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+
+    function logSystem(msg) {
+      const log = document.getElementById("logArea");
+      const p = document.createElement("div");
+      p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      log.appendChild(p);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function addSendRow() {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><input class="form-control form-control-sm" type="text" placeholder="0x123"></td>
+        <td><select class="form-select form-select-sm"><option value="std">STD</option><option value="ext">EXT</option></select></td>
+        <td><input class="form-control form-control-sm" type="text" placeholder="AA BB CC"></td>
+        <td><button class="btn btn-sm btn-success" onclick="sendCANFrame(this)">Send</button></td>
+        <td><input class="form-check-input" type="checkbox"></td>
+        <td><input class="form-control form-control-sm" type="number" placeholder="1000"></td>
+        <td><button class="btn btn-sm btn-danger" onclick="this.closest('tr').remove()">-</button></td>
+      `;
+      document.getElementById("sendBody").appendChild(row);
+    }
+
+    function sendCANFrame(button) {
+      const row = button.closest("tr");
+      const canid = row.cells[0].querySelector("input").value.trim();
+      const type = row.cells[1].querySelector("select").value;
+      const data = row.cells[2].querySelector("input").value.trim().replace(/\s+/g, '');
+
+      if (!/^[0-9a-fA-F]*$/.test(data) || data.length % 2 !== 0) {
+        alert("Invalid hex data");
+        return;
+      }
+
+      socket.emit("write_can", { canid: canid, data: data, type: type });
+      logSystem(`Sent CAN: ID=${canid} Type=${type} Data=${data}`);
+      addCANRow("TX", canid, type, data.length / 2, data, "");
+    }
+
+    function addCANRow(dir, id, type, len, data, canopen) {
+      const table = document.querySelector("#canTable tbody");
+      const row = document.createElement("tr");
+      row.innerHTML = `<td>${new Date().toLocaleTimeString()}</td>
+                       <td>${dir}</td>
+                       <td>${id}</td>
+                       <td>${type}</td>
+                       <td>${len}</td>
+                       <td>${data}</td>
+                       <td>${canopen}</td>`;
+      table.appendChild(row);
+
+      const max = parseInt(document.getElementById("maxFrames").value);
+      while (table.rows.length > max) table.deleteRow(0);
+
+      if (document.getElementById("autoScroll").checked) {
+        table.parentElement.scrollTop = table.parentElement.scrollHeight;
+      }
+    }
+
+    function setCANRate() {
+      const newRate = document.getElementById("canRate").value;
+      if (confirm("Changing CAN rate will restart CAN bus. Continue?")) {
+        socket.emit("config_can_rate", { rate: parseInt(newRate) });
+        logSystem(`CAN rate set to ${newRate} kbps`);
+      }
+    }
+
+    function clearDataTable() {
+      const tbody = document.querySelector("#canTable tbody");
+      tbody.innerHTML = "";
+    }
+
+    socket.on("connect", () => logSystem("Connected to server"));
+    socket.on("disconnect", () => logSystem("Disconnected from server"));
+    socket.on("read_can", (data) => {
+      const filter = parseInt(document.getElementById("filterCanId").value);
+      if (filter === 0 || filter === data.id) {
+        addCANRow("RX", data.id, data.ext ? "EXT" : "STD", data.dlc, data.data, "");
+        logSystem(`Received CAN: ID=${data.id} Data=${data.data}`);
+      }
+    });
+  </script>
+</body>
+</html>
